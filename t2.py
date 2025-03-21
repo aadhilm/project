@@ -21,23 +21,115 @@ import time
 import paramiko
 import sqlite3
 import queue
+import logging
 import speedtest
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from flask import Flask, render_template, request, jsonify
 
-# Database Initialization
+# Enable logging for debugging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Threading lock for database operations
+db_lock = threading.Lock()
+
 def init_db():
     conn = sqlite3.connect('network_scanner.db')
     c = conn.cursor()
+    
+    # Existing tables
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (username TEXT PRIMARY KEY, password TEXT, role TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS activity_logs
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, action TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    
+    # New tables
+    c.execute('''CREATE TABLE IF NOT EXISTS arp_scan
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ip_address TEXT NOT NULL,
+                  mac_address TEXT,
+                  os_info TEXT,
+                  open_ports TEXT,
+                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS vulnerabilities
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  target TEXT NOT NULL,
+                  port INTEGER,
+                  port_state TEXT,
+                  service TEXT,
+                  version TEXT,
+                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS ssh_sessions
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  host TEXT NOT NULL,
+                  port INTEGER NOT NULL,
+                  username TEXT NOT NULL,
+                  command TEXT,
+                  output TEXT,
+                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS web_scans
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  url TEXT NOT NULL,
+                  scan_type TEXT NOT NULL,
+                  result TEXT,
+                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS firewall_ufw
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  action TEXT NOT NULL,
+                  port INTEGER NOT NULL,
+                  protocol TEXT NOT NULL,
+                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    
     conn.commit()
     conn.close()
 
 init_db()
+
+
+def insert_arp_scan_result(ip_address, mac_address, os_info, open_ports):
+    conn = sqlite3.connect('network_scanner.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO arp_scan (ip_address, mac_address, os_info, open_ports) VALUES (?, ?, ?, ?)",
+              (ip_address, mac_address, os_info, open_ports))
+    conn.commit()
+    conn.close()
+
+def insert_vulnerability_scan_result(target, port, port_state, service, version):
+    conn = sqlite3.connect('network_scanner.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO vulnerabilities (target, port, port_state, service, version) VALUES (?, ?, ?, ?, ?)",
+              (target, port, port_state, service, version))
+    conn.commit()
+    conn.close()
+
+def insert_ssh_session_log(host, port, username, command, output):
+    conn = sqlite3.connect('network_scanner.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO ssh_sessions (host, port, username, command, output) VALUES (?, ?, ?, ?, ?)",
+              (host, port, username, command, output))
+    conn.commit()
+    conn.close()
+
+def insert_web_scan_result(url, scan_type, result):
+    conn = sqlite3.connect('network_scanner.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO web_scans (url, scan_type, result) VALUES (?, ?, ?)",
+              (url, scan_type, result))
+    conn.commit()
+    conn.close()
+
+def insert_ufw_rule(action, port, protocol):
+    conn = sqlite3.connect('network_scanner.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO firewall_ufw (action, port, protocol) VALUES (?, ?, ?)",
+              (action, port, protocol))
+    conn.commit()
+    conn.close()
 
 # User Management Classes
 class UserManager:
@@ -457,6 +549,8 @@ class NetworkScanner(tk.Tk):
 
         ttk.Button(scrollable_frame, text="Start Scan", command=self.start_scan).pack(fill="x", pady=5)
         ttk.Button(scrollable_frame, text="Stop Scan", command=self.stop_scan).pack(fill="x", pady=5)
+        ttk.Button(scrollable_frame, text="Simple Sca [ARP]", command=self.run_arp_scan).pack(fill="x", pady=5)
+
 
         ttk.Label(scrollable_frame, text="Advance Scanning", font=("Helvetica", 12, "bold")).pack(pady=10)
         ttk.Label(scrollable_frame, text="Target IP/Host:").pack(anchor="w", pady=5)
@@ -478,7 +572,6 @@ class NetworkScanner(tk.Tk):
         ttk.Button(scrollable_frame, text="SSH Connect", command=self.open_ssh_connection).pack(fill="x", pady=5)
         ttk.Button(scrollable_frame, text="Export Results", command=self.export_results).pack(fill="x", pady=5)
         ttk.Button(scrollable_frame, text="Run Speedtest", command=self.run_speedtest).pack(fill="x", pady=5)
-        ttk.Button(scrollable_frame, text="ARP Scan", command=self.run_arp_scan).pack(fill="x", pady=5)
         ttk.Button(scrollable_frame, text="Clear Output", command=self.clear_all).pack(fill="x", pady=5)
 
         # If the user is a guest, disable certain features
@@ -523,10 +616,8 @@ class NetworkScanner(tk.Tk):
         """Run an ARP scan to discover devices on the local network."""
         self.append_output("Starting ARP scan...\n")
 
-        # Function to perform ARP scan in a separate thread
         def perform_arp_scan():
             try:
-                # Run the arp-scan command
                 result = subprocess.run(
                     ["arp-scan", "--localnet"],  # Scan the local network
                     capture_output=True,
@@ -537,6 +628,15 @@ class NetworkScanner(tk.Tk):
                     # Parse the output and display it
                     self.append_output("ARP Scan Results:\n")
                     self.append_output(result.stdout)
+
+                    # Save results to the database
+                    for line in result.stdout.splitlines():
+                        if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", line):  # Match IP addresses
+                            parts = line.split()
+                            ip_address = parts[0]
+                            mac_address = parts[1]
+                            os_info = " ".join(parts[2:]) if len(parts) > 2 else "Unknown"
+                            insert_arp_scan_result(ip_address, mac_address, os_info, "N/A")  # Open ports not available in ARP scan
                 else:
                     self.append_output(f"Error during ARP scan: {result.stderr}\n")
             except FileNotFoundError:
@@ -544,7 +644,7 @@ class NetworkScanner(tk.Tk):
             except Exception as e:
                 self.append_output(f"Error during ARP scan: {e}\n")
 
-        # Run ARP scan in a separate thread to avoid freezing the GUI
+        # Run ARP scan in a separate thread
         threading.Thread(target=perform_arp_scan).start()
 
     def run_speedtest(self):
@@ -916,9 +1016,21 @@ class NetworkScanner(tk.Tk):
         try:
             result = self.vulnerability_scanner.scan()
             self.append_output(f"Vulnerability Scan Results:\n{result}\n")
+
+            # Parse and save results to the database
+            for line in result.splitlines():
+                if "PORT" in line or "STATE" in line or "SERVICE" in line:
+                    continue  # Skip headers
+                if re.match(r"^\d+/tcp", line):  # Match port lines
+                    parts = line.split()
+                    port = parts[0].split("/")[0]
+                    port_state = parts[1]
+                    service = parts[2]
+                    version = " ".join(parts[3:]) if len(parts) > 3 else "Unknown"
+                    insert_vulnerability_scan_result(self.vuln_target_entry.get(), port, port_state, service, version)
         except Exception as e:
             self.append_output(f"Error during vulnerability scan: {e}\n")
-    
+        
     def open_user_management(self):
         """Open the user management window if the logged-in user is an admin."""
         # Fetch user data from the database
@@ -978,6 +1090,7 @@ class WebScannerWindow(tk.Toplevel):
         try:
             domain_info = whois.whois(url)
             self.output_text.insert(tk.END, f"Domain Info:\n{domain_info}\n")
+            insert_web_scan_result(url, "Domain Info", str(domain_info))
         except Exception as e:
             self.output_text.insert(tk.END, f"Error scanning website: {e}\n")
 
@@ -1158,6 +1271,9 @@ class SSHConnectionWindow(tk.Toplevel):
                 self.output_text.insert(tk.END, f"Command Output:\n{output}\n")
             if errors:
                 self.output_text.insert(tk.END, f"Command Errors:\n{errors}\n")
+
+            # Save SSH session log to the database
+            insert_ssh_session_log(self.host_entry.get(), self.port_var.get(), self.username_entry.get(), command, output + errors)
         except Exception as e:
             self.output_text.insert(tk.END, f"Error executing command: {e}\n")
 
@@ -1327,6 +1443,7 @@ class UFWManagementWindow(tk.Toplevel):
 
         output = self.run_command(f"sudo ufw allow {port}/{protocol}")
         self.output_text.insert(tk.END, f"Allowing port {port}/{protocol}...\n{output}\n")
+        insert_ufw_rule("allow", port, protocol)
 
     def deny_port(self):
         """Deny a specific port."""
