@@ -549,10 +549,9 @@ class NetworkScanner(tk.Tk):
 
         ttk.Button(scrollable_frame, text="Start Scan", command=self.start_scan).pack(fill="x", pady=5)
         ttk.Button(scrollable_frame, text="Stop Scan", command=self.stop_scan).pack(fill="x", pady=5)
-        ttk.Button(scrollable_frame, text="Simple Sca [ARP]", command=self.run_arp_scan).pack(fill="x", pady=5)
-
-
+        ttk.Button(scrollable_frame, text="Basic Scan [ARP]", command=self.run_arp_scan).pack(fill="x", pady=5)
         ttk.Label(scrollable_frame, text="Advance Scanning", font=("Helvetica", 12, "bold")).pack(pady=10)
+
         ttk.Label(scrollable_frame, text="Target IP/Host:").pack(anchor="w", pady=5)
         self.vuln_target_entry = ttk.Entry(scrollable_frame, width=20)
         self.vuln_target_entry.insert(0, "192.168.1")
@@ -584,6 +583,9 @@ class NetworkScanner(tk.Tk):
      # Add UFW Management Button (only for admin users)
         if self.logged_in_user == "admin":
             ttk.Button(scrollable_frame, text="FrieWall", command=self.open_ufw_management).pack(fill="x", pady=5)
+        
+        # Enable/disable features based on user role
+        self.update_ui_for_user_role()
 
     def open_ufw_management(self):
         """Open the UFW management window."""
@@ -607,10 +609,40 @@ class NetworkScanner(tk.Tk):
         self.stop_bandwidth_monitor()
         self.stop_scan()
 
+        # Destroy all widgets and recreate them
+        for widget in self.winfo_children():
+            widget.destroy()
+        
         # Hide the main window and show the login window
         self.withdraw()
         self.login_window = LoginWindow(self)
         self.login_window.deiconify()
+
+    def update_ui_for_user_role(self):
+        """Update the UI based on the current user's role."""
+        if not hasattr(self, 'logged_in_user'):
+            return
+            
+        # Fetch user role from database
+        self.user_manager.c.execute("SELECT role FROM users WHERE username=?", (self.logged_in_user,))
+        result = self.user_manager.c.fetchone()
+        role = result[0] if result else "guest"
+        
+        # Define which buttons should be disabled for guests
+        restricted_buttons = [
+            "Advanced Visualize Topology",
+            "SSH Connect",
+            "Export Results",
+            "Clear Output",
+            "FrieWall",
+            "User Management"
+        ]
+        
+        # Enable/disable buttons based on role
+        for widget in self.winfo_children():
+            if isinstance(widget, ttk.Button):
+                if widget["text"] in restricted_buttons:
+                    widget.config(state="normal" if role == "admin" else "disabled")
 
     def run_arp_scan(self):
         """Run an ARP scan to discover devices on the local network."""
