@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Scanner Web Interface</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: #000;
+            color: #fff;
+            font-family: "Share Tech Mono", monospace;
+            background-color: #02141c;
+            background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+            background-position: -2px -2px, -2px -2px, -1px -1px, -1px -1px;
+            background-image: linear-gradient(rgba(19, 223, 222, 0.1) 2px, transparent 2px),
+                linear-gradient(90deg, rgba(19, 223, 222, 0.1) 2px, transparent 2px),
+                linear-gradient(rgba(68, 121, 139, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(68, 121, 139, 0.1) 1px, transparent 1px);
+            padding: 20px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        textarea {
+            width: 100%;
+            height: 300px;
+            background-color: #1e1e2f;
+            color: #00ff7f;
+            border: 1px solid #3e3e56;
+            padding: 10px;
+            font-family: "Courier", monospace;
+            margin-bottom: 20px;
+            resize: none;
+            overflow: auto;
+            background-image: linear-gradient(to right, rgba(68, 121, 139, 0.1) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(68, 121, 139, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            box-shadow: 0 0 10px rgba(19, 223, 222, 0.5);
+        }
+
+        .scifi-button {
+            display: inline-block;
+            position: relative;
+            font-size: 20px;
+            line-height: 1em;
+            text-transform: uppercase;
+            background: rgba(6, 33, 60, 0.8);
+            padding: 10px 18px;
+            text-decoration: none;
+            color: #fff;
+            margin: 0 10px;
+            border-radius: 0;
+            overflow: hidden;
+            transition: all 0.6s cubic-bezier(0.05, 3, 1, 1) 0s;
+            cursor: pointer;
+        }
+
+        .scifi-button:after,
+        .scifi-button:before {
+            content: "";
+            display: block;
+            position: absolute;
+            border: 2px solid #49839900;
+            width: 10px;
+            top: 0;
+            bottom: 0;
+            transition: all 0.6s cubic-bezier(0.05, 3, 1, 1) 0s;
+        }
+
+        .scifi-button:before {
+            border-right: 0;
+            margin-right: 5px;
+            left: 0;
+        }
+
+        .scifi-button:after {
+            border-left: 0;
+            margin-left: 5px;
+            right: 0;
+        }
+
+        .scifi-button:hover {
+            background: rgba(6, 33, 60, 0.4);
+        }
+
+        .scifi-button:hover:after,
+        .scifi-button:hover:before {
+            border-color: #1ae3de #498399;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Network Scanner Web Interface</h1>
+        <textarea id="output" readonly></textarea>
+        <div>
+            <a id="startScanButton" class="scifi-button" href="#0">Start Scan</a>
+            <a id="stopScanButton" class="scifi-button" href="#0">Stop Scan</a>
+        </div>
+    </div>
+
+    <script>
+        const startScanButton = document.getElementById('startScanButton');
+        const stopScanButton = document.getElementById('stopScanButton');
+
+        function startScan() {
+            const networkPrefix = "192.168.1"; // Default value
+            const ipRange = "1-254"; // Default value
+            fetch("/start_scan", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ network_prefix: networkPrefix, ip_range: ipRange }),
+            }).then(response => response.json())
+              .then(data => console.log(data));
+        }
+
+        function stopScan() {
+            fetch("/stop_scan", {
+                method: "POST",
+            }).then(response => response.json())
+              .then(data => console.log(data));
+        }
+
+        function updateOutput() {
+            fetch("/get_output")
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById("output").value = data.output;
+                });
+        }
+
+        startScanButton.addEventListener('click', startScan);
+        stopScanButton.addEventListener('click', stopScan);
+
+        // Update output every 2 seconds
+        setInterval(updateOutput, 2000);
+    </script>
+</body>
+</html>
