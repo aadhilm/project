@@ -43,3 +43,4 @@ def detect_distro():
 
 if __name__ == "__main__":
     detect_distro()
+    print("\nAll operations completed successfully! You can now use all the installed tools.")
