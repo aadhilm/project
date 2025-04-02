@@ -48,3 +48,7 @@ detect_distro() {
 
 # Main execution
 detect_distro
+
+# Final message
+echo
+echo -e "\033[1m Now Run bash TERMINAL-TOOLS...!!!"
