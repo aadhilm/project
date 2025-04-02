@@ -51,4 +51,4 @@ detect_distro
 
 # Final message
 echo
-echo -e "\033[1m Now Run bash TERMINAL-TOOLS...!!!"
+echo -e "\033[1m Now Run python3 main.py...!!!"
