@@ -1,0 +1,7 @@
+# Net Scanner - Required Python Packages
+scapy>=2.4.5           # Packet manipulation and network scanning
+python-nmap>=0.7.1     # Nmap integration for advanced scanning
+pandas>=1.3.0          # Report generation (CSV/JSON)
+argparse>=1.4.0        # Command-line argument parsing (built-in in Python 3.2+)
+tqdm>=4.62.0           # Progress bars (optional but recommended)
+colorama>=0.4.4        # Colored terminal output (optional)
